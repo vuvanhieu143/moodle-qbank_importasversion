@@ -44,7 +44,7 @@ require_once(__DIR__ . '/../classes/form/import_form.php');
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers    \qbank_importasversion\importer
  */
-final class importer_test extends \advanced_testcase {
+final class importer_merge_tags_test extends \advanced_testcase {
     protected function setUp(): void {
         parent::setUp();
         $this->resetAfterTest();
