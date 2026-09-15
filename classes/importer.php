@@ -229,7 +229,7 @@ class importer extends qformat_xml {
                 );
             }
         }
-        
+
         // Treat a false save result as an error before the transaction can commit, including in force mode.
         if ($result === false) {
             $result = new stdClass();
