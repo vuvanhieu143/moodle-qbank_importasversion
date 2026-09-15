@@ -45,13 +45,18 @@ class importer extends qformat_xml {
      * @param qformat_xml $qformat an instance of
      * @param question_definition $question the question to add a version to.
      * @param string $importedquestionfile filename of the file to import.
+     * @param bool $force Allow save notices. Defaults to true for existing callers;
+     *     the upload form passes false by default.
+     * @param bool $draftonnotice Save retained warnings as Draft. Defaults to false for existing callers.
      * @return object|boolean Either a simple object with error and/or notice properties when there are issues
      * or true on success.
      */
     public static function import_file(
         qformat_xml $qformat,
         question_definition $question,
-        string $importedquestionfile
+        string $importedquestionfile,
+        bool $force = true,
+        bool $draftonnotice = false
     ) {
         global $USER, $DB;
 
@@ -116,7 +121,7 @@ class importer extends qformat_xml {
         $questionversion->questionbankentryid = $question->questionbankentryid;
         $questionversion->questionid = $newquestion->id;
         $questionversion->version = get_next_version($question->questionbankentryid);
-        $questionversion->status = question_version_status::QUESTION_STATUS_READY; // TODO: Give an option on the form.
+        $questionversion->status = question_version_status::QUESTION_STATUS_READY;
         $questionversion->id = $DB->insert_record('question_versions', $questionversion);
 
         if (isset($newquestion->questiontextitemid)) {
@@ -163,11 +168,15 @@ class importer extends qformat_xml {
         }
         $DB->update_record('question', $newquestion);
 
-        $qformat->questionids[] = $newquestion->id;
-
         // Now to save all the answers and type-specific options.
 
         $result = question_bank::get_qtype($newquestion->qtype)->save_question_options($newquestion);
+
+        // Treat a false save result as an error before the transaction can commit, including in force mode.
+        if ($result === false) {
+            $result = new stdClass();
+            $result->error = get_string('unknownerror', 'qbank_importasversion');
+        }
 
         if (core_tag_tag::is_enabled('core_question', 'question')) {
             // Course tags on questions are deprecated; merge them into the question tags.
@@ -181,11 +190,26 @@ class importer extends qformat_xml {
             );
         }
 
+        // A rejected notice must be reported as a failure, not as a successful import with warnings.
+        if (!$force && !empty($result->notice) && empty($result->error)) {
+            $result->error = $result->notice;
+        }
+
         if (!empty($result->error)) {
             // Can't use $transaction->rollback(); since it requires an exception,
             // and I don't want to rewrite this code to change the error handling now.
             $DB->force_transaction_rollback();
             return $result;
+        }
+
+        if ($draftonnotice && !empty($result->notice)) {
+            $DB->set_field(
+                'question_versions',
+                'status',
+                question_version_status::QUESTION_STATUS_DRAFT,
+                ['id' => $questionversion->id]
+            );
+            $result->notice = get_string('importedwithwarningsasdraft', 'qbank_importasversion') . '<br>' . $result->notice;
         }
 
         question_version_imported::create([
@@ -199,18 +223,12 @@ class importer extends qformat_xml {
         ])->trigger();
 
         $transaction->allow_commit();
+        $qformat->questionids[] = $newquestion->id;
 
         if ($result === null) {
             // Some question types don't have a return value when saving options.
             // If it hasn't thrown an Exception then it's fine.
             $result = true;
-        }
-        if ($result === false) {
-            // This probably shouldn't happen but given all the question types out there
-            // it's probably worth making sure we're handling it.
-            $result = new stdClass();
-            $result->error = get_string('unknownerror', 'qbank_importasversion');
-            return $result;
         }
 
         return $result;
