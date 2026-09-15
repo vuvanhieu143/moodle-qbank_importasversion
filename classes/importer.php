@@ -58,7 +58,7 @@ class importer extends qformat_xml {
         qformat_xml $qformat,
         question_definition $question,
         string $importedquestionfile,
-        bool $mergetags = false
+        bool $mergetags = false,
         bool $force = true,
         bool $draftonnotice = false
     ) {
